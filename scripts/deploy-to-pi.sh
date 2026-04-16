@@ -13,11 +13,11 @@ ssh -o BatchMode=yes "$SSH_ALIAS" bash <<EOF
 set -euo pipefail
 REMOTE_DIR=${REMOTE_DIR@Q}
 LEGACY_DIR=${LEGACY_DIR@Q}
-mkdir -p "$REMOTE_DIR"
+mkdir -p "\$REMOTE_DIR"
 
-if [ ! -f "$REMOTE_DIR/whisper.env" ]; then
-  if [ -f "$LEGACY_DIR/whisper.env" ]; then
-    cp "$LEGACY_DIR/whisper.env" "$REMOTE_DIR/whisper.env"
+if [ ! -f "\$REMOTE_DIR/whisper.env" ]; then
+  if [ -f "\$LEGACY_DIR/whisper.env" ]; then
+    cp "\$LEGACY_DIR/whisper.env" "\$REMOTE_DIR/whisper.env"
     echo "Copied existing whisper.env from legacy service dir"
   else
     python3 - <<'PY'
@@ -32,11 +32,19 @@ PY
   fi
 fi
 
-if [ -f "$LEGACY_DIR/docker-compose.yml" ]; then
-  (cd "$LEGACY_DIR" && docker compose down) || true
+cd "\$REMOTE_DIR"
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
 fi
 
-cd "$REMOTE_DIR"
+docker volume create "\${WHISPER_MODEL_CACHE_VOLUME_NAME:-transcription-server-whisper-data}" >/dev/null
+
+if [ -f "\$LEGACY_DIR/docker-compose.yml" ]; then
+  (cd "\$LEGACY_DIR" && docker compose down) || true
+fi
+
 docker compose pull
 docker compose up -d
 docker compose ps

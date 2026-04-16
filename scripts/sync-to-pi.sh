@@ -7,6 +7,7 @@ REMOTE_DIR="${2:-/home/mmounier/services/transcription-server}"
 
 rsync -az --delete \
   --exclude '.git/' \
+  --exclude '.env' \
   --exclude 'whisper.env' \
   --exclude '.DS_Store' \
   "$APP_DIR/" "$SSH_ALIAS:$REMOTE_DIR/"

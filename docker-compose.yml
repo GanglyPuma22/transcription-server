@@ -1,0 +1,14 @@
+services:
+  whisper:
+    image: hwdsl2/whisper-server@sha256:94dc52fe65de35d20cf1e14be9805c471552e28aba1b71b582d7d685106850c4
+    restart: unless-stopped
+    ports:
+      - "9000:9000/tcp"
+    volumes:
+      - whisper-model-cache:/var/lib/whisper
+      - ./whisper.env:/whisper.env:ro
+
+volumes:
+  whisper-model-cache:
+    external: true
+    name: whisper_whisper-data

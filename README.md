@@ -8,17 +8,9 @@ One common use case: an OpenClaw agent receives a Telegram voice note, posts the
 
 ## Architecture
 
-The point of this repo is the local entry point. The OpenAI-compatible transcription endpoint is just the wire format that makes the integration easy.
+This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: keep transcription off the main box so the agent can keep moving.
 
-```mermaid
-flowchart LR
-    A[Voice note or audio file] --> B[OpenClaw agent or local script]
-    B -->|POST audio to /v1/audio/transcriptions| C[Raspberry Pi or Linux host]
-    C --> D[whisper-server container]
-    D --> E[(Whisper model cache volume)]
-    D --> F[Plain text transcript]
-    F --> B
-```
+![Architecture diagram showing a Telegram voice note flowing through an OpenClaw agent to a Raspberry Pi transcription box, then back as plain text so the workflow can continue.](./docs/architecture-diagram.png)
 
 ## At a glance
 

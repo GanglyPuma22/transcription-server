@@ -1,5 +1,8 @@
 # v0.1.0 launch copy drafts
 
+Image to attach with LinkedIn and X post:
+- `docs/architecture-diagram.png`
+
 ## GitHub release blurb
 
 `transcription-server` is a small self-hosted transcription box for local tools.
@@ -10,29 +13,32 @@ It is intentionally thin. The model work is upstream in `hwdsl2/docker-whisper`.
 
 ## LinkedIn draft
 
-One pattern I keep coming back to with OpenClaw is this: build a tool to solve a real problem in my own workflow, then clean it up enough that other people might actually want it too.
+A pattern I keep coming back to with OpenClaw is this: build around a real problem, keep the fix small, and ship the parts that might be useful to other people too.
 
-This one started because I wanted OpenClaw to handle voice notes without dragging down the main machine. Running Whisper on the same workstation as an active agent setup was too CPU-heavy. One transcription job could make the rest of the system feel sticky.
+This repo started from a pretty specific pain point. I wanted OpenClaw to handle voice notes as part of a local-agent workflow, but running Whisper on the same workstation as the agent stack was too CPU-heavy. One transcription job could make the rest of the system feel sluggish.
 
-So I split that responsibility out. `transcription-server` is the small repo that came out of it: a self-hosted transcription box for a Raspberry Pi or small Linux host, with sane defaults and a simple deploy story.
+So I split that responsibility out. `transcription-server` is the small repo that came out of it: a self-hosted transcription box for a Raspberry Pi or small Linux host, with safe defaults, a simple deploy path, and a clean handoff back into the agent workflow.
 
-It is not a new speech-to-text model. That is not the claim. The useful part is taking solid upstream OSS, packaging it carefully, and making it work well inside a real local-agent system.
+It is not a new speech-to-text model, and that is not the claim. The useful part is taking solid upstream OSS, packaging it carefully, and making it practical inside a system I actually use.
 
-That is probably the broader thread I care about most right now: building around agents in a way that stays practical, inspectable, and worth shipping.
+That is the broader thread I care about with OpenClaw too: not just agents for the sake of agents, but small, inspectable tools around them that make the whole system more useful.
 
 Repo: <add-url>
+Attach image: `docs/architecture-diagram.png`
 
 ## X draft
 
-A pattern I keep coming back to with OpenClaw: build a tool for my own workflow, then clean it up enough to ship.
+A pattern I keep coming back to with OpenClaw:
+build for a real workflow, keep the fix small, ship the useful part.
 
 Latest example: `transcription-server`.
 
-I built it after realizing local Whisper on my main OpenClaw box was enough to make active sessions crawl. So I moved transcription onto a Pi and wrapped the deploy/restart/logs/status story into a tiny repo.
+I wanted voice-note handling in a local-agent setup, but running Whisper on the same box as OpenClaw was enough to make active sessions crawl. So I moved transcription onto a Pi and wrapped the deploy/restart/logs/status story into a tiny repo.
 
 Not a new ASR model. Just a practical self-hosted transcription box for local agents and scripts.
 
 Repo: <add-url>
+Attach image: `docs/architecture-diagram.png`
 
 ## Short Discord / forum draft
 

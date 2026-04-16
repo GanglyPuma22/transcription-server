@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Show remote compose status plus the container restart policy.
+#
+# Usage:
+#   ./scripts/status-on-pi.sh [ssh-alias] [remote-dir]
+#
+# Defaults:
+#   ssh-alias  = video-server
+#   remote-dir = /home/mmounier/services/transcription-server
+
 SSH_ALIAS="${1:-video-server}"
 REMOTE_DIR="${2:-/home/mmounier/services/transcription-server}"
 

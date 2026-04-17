@@ -66,6 +66,8 @@ It posts the audio file to the server, auto-derives a sensible timeout from the 
 
 By default the helper prefers explicit `STT_PI_URL` / `STT_PI_API_KEY` overrides first, then the local repo's `whisper.env` when present, and only falls back to SSH-based `video-server` discovery if no local runtime config exists.
 
+When it resolves to a local URL such as `127.0.0.1:9000`, it also waits for `/health` before uploading the audio so startup/model-load races are less annoying.
+
 ### 5) Or call the HTTP API directly
 
 ```bash

@@ -23,6 +23,9 @@ check_ip() {
 if [ -f /whisper.env ]; then
   # shellcheck disable=SC1091
   . /whisper.env
+else
+  echo "WARNING: /whisper.env was not mounted; falling back to defaults." >&2
+  echo "WARNING: For the GPU path, copy whisper.nvidia.env.example to whisper.env before starting compose." >&2
 fi
 
 if [ ! -f "/.dockerenv" ] && [ ! -f "/run/.containerenv" ] \
@@ -133,6 +136,10 @@ echo "  Device:   $WHISPER_DEVICE ($WHISPER_COMPUTE_TYPE)"
 echo "  Language: $WHISPER_LANGUAGE"
 echo "  Port:     $WHISPER_PORT"
 echo "  Beam:     $WHISPER_BEAM"
+if [ "$WHISPER_DEVICE" != "cuda" ]; then
+  echo "WARNING: GPU mode is not active (WHISPER_DEVICE=$WHISPER_DEVICE)." >&2
+  echo "WARNING: Check whisper.env and use whisper.nvidia.env.example for the experimental GPU path." >&2
+fi
 echo
 
 cleanup() {

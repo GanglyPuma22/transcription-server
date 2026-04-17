@@ -27,6 +27,7 @@ set -euo pipefail
 #   STT_PI_TIMEOUT         Exact curl timeout seconds override
 #   STT_PI_TIMEOUT_PAD     Added padding above audio duration when timeout is auto-derived (default: 420)
 #   STT_PI_TIMEOUT_MIN     Minimum timeout for auto-derived mode (default: 1200)
+#   STT_PI_READY_WAIT      Seconds to wait for /health before uploading when using a local URL (default: 120)
 #   STT_PI_DEBUG           1 to print endpoint / temp path / duration / timeout / timing to stderr
 
 if [[ $# -ne 1 ]]; then
@@ -52,6 +53,7 @@ TIMEOUT_OVERRIDE="${STT_PI_TIMEOUT:-}"
 TIMEOUT_PAD="${STT_PI_TIMEOUT_PAD:-420}"
 TIMEOUT_MIN="${STT_PI_TIMEOUT_MIN:-1200}"
 DEBUG="${STT_PI_DEBUG:-0}"
+READY_WAIT="${STT_PI_READY_WAIT:-120}"
 
 require_binary() {
   local name="$1"
@@ -180,9 +182,36 @@ print(max(minimum, duration + pad))
 PY
 }
 
+is_local_base_url() {
+  case "$1" in
+    http://127.0.0.1:*|http://localhost:*|http://[::1]:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wait_for_local_server() {
+  local base_url="$1"
+  local deadline health_url
+  health_url="$base_url/health"
+  deadline=$((SECONDS + READY_WAIT))
+
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 2 "$health_url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: local transcription server did not become ready at $health_url within ${READY_WAIT}s" >&2
+  exit 11
+}
+
 check_dependencies
 
 BASE_URL="$(resolve_url)"
+if is_local_base_url "$BASE_URL"; then
+  wait_for_local_server "$BASE_URL"
+fi
 API_KEY="$(resolve_key)"
 TIMEOUT="$(compute_timeout)"
 AUDIO_DURATION_RAW="$(audio_duration_seconds)"

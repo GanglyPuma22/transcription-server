@@ -207,7 +207,7 @@ Notes:
 - `docker-compose.nvidia.yml` overrides the service to build a local CUDA-capable image, request `gpus: all`, and auto-manage the model-cache volume for local testing.
 - `whisper.nvidia.env.example` sets `WHISPER_DEVICE=cuda` and `WHISPER_COMPUTE_TYPE=float16` as the first-pass defaults.
 - For tighter VRAM, try `WHISPER_COMPUTE_TYPE=int8_float16`.
-- In local testing on an NVIDIA-equipped main machine, a 13-minute file finished in roughly 20 seconds. Treat that as a real-world datapoint, not a formal benchmark.
+- In one real local comparison, roughly 13 minutes of audio took about 15 minutes on CPU and about 20 seconds on GPU. Treat that as a workflow datapoint, not a formal benchmark.
 
 The GPU path is newer than the default CPU path, so it should be treated as an optional fast path rather than the only supported deployment mode.
 

@@ -13,6 +13,11 @@ set -euo pipefail
 # - otherwise timeout = ceil(audio_duration_seconds) + STT_PI_TIMEOUT_PAD
 # - and the result is clamped to at least STT_PI_TIMEOUT_MIN
 #
+# Resolution order:
+# 1. Use STT_PI_URL / STT_PI_API_KEY when explicitly provided.
+# 2. Otherwise, if this repo has a local whisper.env, use the local deployment.
+# 3. Otherwise, fall back to SSH-based discovery for the remote video-server path.
+#
 # Env vars:
 #   STT_PI_SSH_ALIAS       SSH host alias to inspect for auto-discovery (default: video-server)
 #   STT_PI_URL             Override full base URL, e.g. http://10.0.0.45:9000
@@ -34,6 +39,11 @@ if [[ ! -f "$AUDIO_FILE" ]]; then
   echo "ERROR: file not found: $AUDIO_FILE" >&2
   exit 2
 fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_COMPOSE_ENV="$APP_DIR/.env"
+LOCAL_WHISPER_ENV="$APP_DIR/whisper.env"
 
 SSH_ALIAS="${STT_PI_SSH_ALIAS:-video-server}"
 LANGUAGE="${STT_PI_LANGUAGE:-en}"
@@ -58,13 +68,46 @@ check_dependencies() {
   require_binary python3
 
   if [[ -z "${STT_PI_URL:-}" || -z "${STT_PI_API_KEY:-}" ]]; then
-    require_binary ssh
+    if ! has_local_runtime_config; then
+      require_binary ssh
+    fi
   fi
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -n 1
+}
+
+has_local_runtime_config() {
+  [[ -f "$LOCAL_WHISPER_ENV" ]]
+}
+
+local_base_url() {
+  local bind_addr host_port client_host
+  bind_addr="$(read_env_value "$LOCAL_COMPOSE_ENV" WHISPER_BIND_ADDR)"
+  host_port="$(read_env_value "$LOCAL_COMPOSE_ENV" WHISPER_HOST_PORT)"
+
+  [[ -z "$bind_addr" ]] && bind_addr="127.0.0.1"
+  [[ -z "$host_port" ]] && host_port="9000"
+
+  case "$bind_addr" in
+    0.0.0.0|::|"") client_host="127.0.0.1" ;;
+    *) client_host="$bind_addr" ;;
+  esac
+
+  printf 'http://%s:%s\n' "$client_host" "$host_port"
 }
 
 resolve_url() {
   if [[ -n "${STT_PI_URL:-}" ]]; then
     printf '%s\n' "$STT_PI_URL"
+    return
+  fi
+
+  if has_local_runtime_config; then
+    local_base_url
     return
   fi
 
@@ -87,6 +130,16 @@ resolve_key() {
   fi
 
   local key
+  if has_local_runtime_config; then
+    key="$(read_env_value "$LOCAL_WHISPER_ENV" WHISPER_API_KEY)"
+    if [[ -z "$key" ]]; then
+      echo "ERROR: local whisper.env exists but WHISPER_API_KEY is missing (set STT_PI_API_KEY or update $LOCAL_WHISPER_ENV)" >&2
+      exit 4
+    fi
+    printf '%s\n' "$key"
+    return
+  fi
+
   if ! key="$(ssh -o BatchMode=yes "$SSH_ALIAS" "sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/transcription-server/whisper.env 2>/dev/null || sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/whisper/whisper.env 2>/dev/null")"; then
     echo "ERROR: failed to fetch STT Pi API key over SSH (set STT_PI_API_KEY or fix SSH access to $SSH_ALIAS)" >&2
     exit 4

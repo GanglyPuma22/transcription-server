@@ -64,6 +64,8 @@ docker compose up -d
 This is the intended default way to use the server from a local script or agent client.
 It posts the audio file to the server, auto-derives a sensible timeout from the file duration, and still lets you override the timeout explicitly if you need to.
 
+By default the helper prefers explicit `STT_PI_URL` / `STT_PI_API_KEY` overrides first, then the local repo's `whisper.env` when present, and only falls back to SSH-based `video-server` discovery if no local runtime config exists.
+
 ### 5) Or call the HTTP API directly
 
 ```bash
@@ -227,7 +229,7 @@ Local prerequisites for the client helper:
 - `ffmpeg`
 - `ffprobe`
 - `python3`
-- `ssh` when using auto-discovery or remote API-key lookup
+- `ssh` only when using auto-discovery or remote API-key lookup
 
 Useful overrides:
 

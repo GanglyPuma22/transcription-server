@@ -53,7 +53,16 @@ If you changed `WHISPER_MODEL_CACHE_VOLUME_NAME`, create that volume name instea
 docker compose up -d
 ```
 
-### 4) Test one transcription call
+### 4) Transcribe a file with the default client helper
+
+```bash
+./scripts/transcribe-file.sh /path/to/audio.ogg
+```
+
+This is the intended default way to use the server from a local script or agent client.
+It posts the audio file to the server, auto-derives a sensible timeout from the file duration, and still lets you override the timeout explicitly if you need to.
+
+### 5) Or call the HTTP API directly
 
 ```bash
 curl -sS \
@@ -143,15 +152,21 @@ The motivating workflow for me looked like this:
 
 The nice part is not the HTTP endpoint by itself. The nice part is that the transcription box becomes predictable. You know where it runs, how it is deployed, where the model cache lives, and how to restart it when something goes sideways.
 
-## Duration-aware client helper
+## Default client helper
 
-This repo also includes a practical client helper for long recordings:
+This repo includes a local client script so users do not need to reconstruct the API call every time:
+
+```bash
+./scripts/transcribe-file.sh /path/to/audio.ogg
+```
+
+That wrapper delegates to the duration-aware implementation:
 
 ```bash
 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
 ```
 
-By default it derives the request timeout from the audio duration so long voice notes do not get clipped by a too-short client timeout:
+The duration-aware behavior is the default for all files, not just long ones:
 
 - if `STT_PI_TIMEOUT` is set, that exact timeout is used
 - otherwise timeout = `ceil(audio_duration_seconds) + STT_PI_TIMEOUT_PAD`
@@ -162,13 +177,21 @@ Default values:
 - `STT_PI_TIMEOUT_PAD=420`
 - `STT_PI_TIMEOUT_MIN=1200`
 
+Local prerequisites for the client helper:
+
+- `curl`
+- `ffmpeg`
+- `ffprobe`
+- `python3`
+- `ssh` when using auto-discovery or remote API-key lookup
+
 Useful overrides:
 
 ```bash
-STT_PI_TIMEOUT=3600 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
-STT_PI_TIMEOUT_PAD=600 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
-STT_PI_TIMEOUT_MIN=1800 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
-STT_PI_DEBUG=1 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+STT_PI_TIMEOUT=3600 ./scripts/transcribe-file.sh /path/to/audio.ogg
+STT_PI_TIMEOUT_PAD=600 ./scripts/transcribe-file.sh /path/to/audio.ogg
+STT_PI_TIMEOUT_MIN=1800 ./scripts/transcribe-file.sh /path/to/audio.ogg
+STT_PI_DEBUG=1 ./scripts/transcribe-file.sh /path/to/audio.ogg
 ```
 
 ## Files
@@ -176,7 +199,8 @@ STT_PI_DEBUG=1 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
 - `docker-compose.yml` — pinned deployment config with safe tracked defaults
 - `.env.example` — optional host-specific Docker Compose overrides
 - `whisper.env.example` — runtime env template for the upstream container
-- `scripts/transcribe-file-via-server.sh` — duration-aware local client for posting audio to the server
+- `scripts/transcribe-file.sh` — canonical local client entrypoint for posting audio to the server
+- `scripts/transcribe-file-via-server.sh` — duration-aware implementation used by the default client helper
 - `scripts/sync-to-pi.sh` — rsync the repo to a remote host
 - `scripts/deploy-to-pi.sh` — sync, preserve env, create volume, and deploy
 - `scripts/restart-on-pi.sh` — restart the service remotely

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: scripts/transcribe-file-via-server.sh <audio-file>
+# Transcribe a local audio file by posting it to the self-hosted transcription
+# server.
 #
-# Transcribes an audio file by sending it to the Raspberry Pi / Linux-hosted
-# transcription server.
+# Usage:
+#   ./scripts/transcribe-file-via-server.sh <audio-file>
 #
-# Default timeout behavior is duration-aware:
+# This script is safe to use as the default client helper for both short and
+# long files. The default timeout behavior is duration-aware:
 # - if STT_PI_TIMEOUT is set, that exact timeout is used
 # - otherwise timeout = ceil(audio_duration_seconds) + STT_PI_TIMEOUT_PAD
 # - and the result is clamped to at least STT_PI_TIMEOUT_MIN
@@ -41,6 +43,25 @@ TIMEOUT_PAD="${STT_PI_TIMEOUT_PAD:-420}"
 TIMEOUT_MIN="${STT_PI_TIMEOUT_MIN:-1200}"
 DEBUG="${STT_PI_DEBUG:-0}"
 
+require_binary() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "ERROR: required command not found: $name" >&2
+    exit 10
+  fi
+}
+
+check_dependencies() {
+  require_binary curl
+  require_binary ffmpeg
+  require_binary ffprobe
+  require_binary python3
+
+  if [[ -z "${STT_PI_URL:-}" || -z "${STT_PI_API_KEY:-}" ]]; then
+    require_binary ssh
+  fi
+}
+
 resolve_url() {
   if [[ -n "${STT_PI_URL:-}" ]]; then
     printf '%s\n' "$STT_PI_URL"
@@ -48,9 +69,12 @@ resolve_url() {
   fi
 
   local host
-  host="$(ssh -G "$SSH_ALIAS" | awk '/^hostname /{print $2; exit}')"
+  if ! host="$(ssh -G "$SSH_ALIAS" 2>/dev/null | awk '/^hostname /{print $2; exit}')"; then
+    echo "ERROR: failed to inspect SSH config for alias: $SSH_ALIAS (set STT_PI_URL or fix SSH access/config)" >&2
+    exit 3
+  fi
   if [[ -z "$host" ]]; then
-    echo "ERROR: could not resolve SSH host for alias: $SSH_ALIAS" >&2
+    echo "ERROR: could not resolve SSH host for alias: $SSH_ALIAS (set STT_PI_URL or define the SSH alias)" >&2
     exit 3
   fi
   printf 'http://%s:9000\n' "$host"
@@ -63,7 +87,10 @@ resolve_key() {
   fi
 
   local key
-  key="$(ssh -o BatchMode=yes "$SSH_ALIAS" "sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/transcription-server/whisper.env 2>/dev/null || sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/whisper/whisper.env 2>/dev/null")"
+  if ! key="$(ssh -o BatchMode=yes "$SSH_ALIAS" "sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/transcription-server/whisper.env 2>/dev/null || sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/whisper/whisper.env 2>/dev/null")"; then
+    echo "ERROR: failed to fetch STT Pi API key over SSH (set STT_PI_API_KEY or fix SSH access to $SSH_ALIAS)" >&2
+    exit 4
+  fi
   if [[ -z "$key" ]]; then
     echo "ERROR: could not resolve STT Pi API key (set STT_PI_API_KEY or fix SSH access to $SSH_ALIAS)" >&2
     exit 4
@@ -100,6 +127,8 @@ print(max(minimum, duration + pad))
 PY
 }
 
+check_dependencies
+
 BASE_URL="$(resolve_url)"
 API_KEY="$(resolve_key)"
 TIMEOUT="$(compute_timeout)"
@@ -108,6 +137,7 @@ AUDIO_DURATION_RAW="$(audio_duration_seconds)"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 PAYLOAD="$WORK_DIR/payload.wav"
+CURL_CONFIG="$WORK_DIR/curl.conf"
 ffmpeg -hide_banner -loglevel error -y -i "$AUDIO_FILE" -ac 1 -ar 16000 "$PAYLOAD"
 
 START_TS="$(python3 - <<'PY'
@@ -117,8 +147,9 @@ PY
 )"
 
 RESPONSE_FILE="$WORK_DIR/response.txt"
-curl -sS -m "$TIMEOUT" \
-  -H "Authorization: Bearer $API_KEY" \
+printf 'header = "Authorization: Bearer %s"\n' "$API_KEY" > "$CURL_CONFIG"
+chmod 600 "$CURL_CONFIG"
+curl -sS --fail-with-body -m "$TIMEOUT" --config "$CURL_CONFIG" \
   -F file=@"$PAYLOAD" \
   -F model="$MODEL" \
   -F language="$LANGUAGE" \

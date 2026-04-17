@@ -1,0 +1,10 @@
+services:
+  whisper:
+    image: transcription-server-whisper-gpu:local
+    build:
+      context: .
+      dockerfile: docker/nvidia/Dockerfile
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility

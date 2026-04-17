@@ -16,6 +16,8 @@ This repo is mostly about the local handoff. The HTTP endpoint matters because i
 
 - This is a thin deployment wrapper around [`hwdsl2/docker-whisper`](https://github.com/hwdsl2/docker-whisper).
 - It is good for local agents, local scripts, and private speech-to-text on a Pi or small Linux box.
+- The default tracked path is still CPU-first and safe for the current Pi deployment.
+- This branch also includes an experimental NVIDIA GPU path for faster local transcription on a GPU-equipped host.
 - It is not a new ASR engine, not a hosted SaaS, and not a hardened public-Internet deployment.
 
 ## Quick start
@@ -141,6 +143,48 @@ What the deploy script does:
 4. pulls the pinned image
 5. restarts the service with Docker Compose
 
+## Experimental NVIDIA GPU path
+
+The current upstream `hwdsl2/whisper-server` image is CPU-only at startup time: its `run.sh` validates `WHISPER_DEVICE=cpu` and rejects `cuda`.
+
+Because of that, this repo cannot add real GPU support by flipping one env var on the existing image. The experimental GPU path in this branch uses a separate CUDA-based local build instead, while leaving the default CPU deployment untouched.
+
+Good fit for the experimental path:
+
+- a laptop or workstation with an NVIDIA GPU
+- faster local transcription for long files or future voice/agent workflows
+- testing whether this repo can become the shared local STT layer for voice-bridge-style work
+
+### 1) Check host GPU support
+
+```bash
+./scripts/check-nvidia-support.sh
+```
+
+This checks `nvidia-smi`, Docker reachability, and whether Docker can see the GPU through a tiny CUDA container.
+
+### 2) Prepare the GPU runtime env
+
+```bash
+cp whisper.nvidia.env.example whisper.env
+cp .env.example .env
+```
+
+### 3) Build and run the NVIDIA variant
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d --build
+```
+
+Notes:
+
+- `docker-compose.yml` still carries the normal ports, volume, and `whisper.env` mount.
+- `docker-compose.nvidia.yml` overrides the service to build a local CUDA-capable image and request `gpus: all`.
+- `whisper.nvidia.env.example` sets `WHISPER_DEVICE=cuda` and `WHISPER_COMPUTE_TYPE=float16` as the first-pass defaults.
+- For tighter VRAM, try `WHISPER_COMPUTE_TYPE=int8_float16`.
+
+This branch treats the GPU path as experimental because it has not been validated on your actual laptop yet.
+
 ## How this fits into a local-tool workflow
 
 The motivating workflow for me looked like this:
@@ -197,10 +241,13 @@ STT_PI_DEBUG=1 ./scripts/transcribe-file.sh /path/to/audio.ogg
 ## Files
 
 - `docker-compose.yml` — pinned deployment config with safe tracked defaults
+- `docker-compose.nvidia.yml` — experimental NVIDIA GPU override for local CUDA-capable hosts
 - `.env.example` — optional host-specific Docker Compose overrides
-- `whisper.env.example` — runtime env template for the upstream container
+- `whisper.env.example` — runtime env template for the default CPU/upstream container
+- `whisper.nvidia.env.example` — runtime env template for the experimental NVIDIA GPU variant
 - `scripts/transcribe-file.sh` — canonical local client entrypoint for posting audio to the server
 - `scripts/transcribe-file-via-server.sh` — duration-aware implementation used by the default client helper
+- `scripts/check-nvidia-support.sh` — quick host-side check for the experimental NVIDIA GPU path
 - `scripts/sync-to-pi.sh` — rsync the repo to a remote host
 - `scripts/deploy-to-pi.sh` — sync, preserve env, create volume, and deploy
 - `scripts/restart-on-pi.sh` — restart the service remotely
@@ -222,6 +269,8 @@ A few blunt notes, because this is where people get sloppy:
 You probably should, if all you need is the server.
 
 This repo exists for the case where you want the smallest possible deployment wrapper around that upstream work, plus a few operational conveniences that make it pleasant to use from local automation.
+
+In this branch, that also includes an experimental GPU-oriented variant for hosts where fast local transcription matters more than strict parity with the Pi deployment.
 
 ## License
 

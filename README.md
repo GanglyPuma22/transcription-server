@@ -143,11 +143,40 @@ The motivating workflow for me looked like this:
 
 The nice part is not the HTTP endpoint by itself. The nice part is that the transcription box becomes predictable. You know where it runs, how it is deployed, where the model cache lives, and how to restart it when something goes sideways.
 
+## Duration-aware client helper
+
+This repo also includes a practical client helper for long recordings:
+
+```bash
+./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+```
+
+By default it derives the request timeout from the audio duration so long voice notes do not get clipped by a too-short client timeout:
+
+- if `STT_PI_TIMEOUT` is set, that exact timeout is used
+- otherwise timeout = `ceil(audio_duration_seconds) + STT_PI_TIMEOUT_PAD`
+- the auto-derived timeout is clamped to at least `STT_PI_TIMEOUT_MIN`
+
+Default values:
+
+- `STT_PI_TIMEOUT_PAD=420`
+- `STT_PI_TIMEOUT_MIN=1200`
+
+Useful overrides:
+
+```bash
+STT_PI_TIMEOUT=3600 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+STT_PI_TIMEOUT_PAD=600 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+STT_PI_TIMEOUT_MIN=1800 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+STT_PI_DEBUG=1 ./scripts/transcribe-file-via-server.sh /path/to/audio.ogg
+```
+
 ## Files
 
 - `docker-compose.yml` — pinned deployment config with safe tracked defaults
 - `.env.example` — optional host-specific Docker Compose overrides
 - `whisper.env.example` — runtime env template for the upstream container
+- `scripts/transcribe-file-via-server.sh` — duration-aware local client for posting audio to the server
 - `scripts/sync-to-pi.sh` — rsync the repo to a remote host
 - `scripts/deploy-to-pi.sh` — sync, preserve env, create volume, and deploy
 - `scripts/restart-on-pi.sh` — restart the service remotely

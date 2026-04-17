@@ -16,6 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /opt/src
 
 RUN set -x \
+    && mkdir -p /var/lib/whisper /run/whisper-temp \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
          ca-certificates \
@@ -31,8 +32,7 @@ RUN set -x \
          "uvicorn[standard]" \
          python-multipart \
     && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /var/lib/whisper /run/whisper-temp
+    && rm -rf /var/lib/apt/lists/*
 
 COPY ./docker/nvidia/run.sh /opt/src/run.sh
 COPY ./docker/nvidia/manage.sh /opt/src/manage.sh

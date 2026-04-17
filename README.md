@@ -183,7 +183,7 @@ docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d --build
 Notes:
 
 - `docker-compose.yml` still carries the normal ports, volume, and `whisper.env` mount.
-- `docker-compose.nvidia.yml` overrides the service to build a local CUDA-capable image and request `gpus: all`.
+- `docker-compose.nvidia.yml` overrides the service to build a local CUDA-capable image, request `gpus: all`, and auto-manage the model-cache volume for local testing.
 - `whisper.nvidia.env.example` sets `WHISPER_DEVICE=cuda` and `WHISPER_COMPUTE_TYPE=float16` as the first-pass defaults.
 - For tighter VRAM, try `WHISPER_COMPUTE_TYPE=int8_float16`.
 

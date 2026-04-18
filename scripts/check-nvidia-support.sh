@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Quick host-side check for the experimental NVIDIA GPU path.
+# Quick host-side check for the optional NVIDIA GPU path.
 #
 # Usage:
 #   ./scripts/check-nvidia-support.sh

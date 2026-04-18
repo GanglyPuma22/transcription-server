@@ -201,6 +201,18 @@ cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d --build
 ```
 
+### 4) Verify the GPU path actually came up
+
+```bash
+curl -fsS http://127.0.0.1:9000/health
+```
+
+If you want one higher-confidence check, inspect what the running container sees:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec whisper sh -lc 'echo "--- /whisper.env ---"; cat /whisper.env; echo; echo "--- WHISPER_* ---"; env | grep "^WHISPER_" | sort; echo; echo "--- /dev/nvidia* ---"; ls -l /dev/nvidia*'
+```
+
 Notes:
 
 - `docker-compose.yml` still carries the normal ports, volume, and `whisper.env` mount.
@@ -210,6 +222,22 @@ Notes:
 - In one real local comparison, roughly 13 minutes of audio took about 15 minutes on CPU and about 20 seconds on GPU. Treat that as a workflow datapoint, not a formal benchmark.
 
 The GPU path is newer than the default CPU path, so it should be treated as an optional fast path rather than the only supported deployment mode.
+
+### Common GPU gotchas
+
+If the container starts but the logs still show CPU defaults such as `base`, `cpu`, `auto`, or `threads=2`, check these first:
+
+- did you copy `whisper.nvidia.env.example` to `whisper.env` before startup?
+- does `docker compose ... exec whisper cat /whisper.env` show `WHISPER_DEVICE=cuda`?
+- does `docker compose ... exec whisper ls -l /dev/nvidia*` show GPU devices inside the container?
+- does `./scripts/check-nvidia-support.sh` pass on the host?
+- did you recreate the service after changing env files?
+
+If the server is running but the client helper still cannot connect locally, check:
+
+- `curl -fsS http://127.0.0.1:9000/health`
+- whether `.env` still binds to `127.0.0.1`
+- whether the model is still downloading/loading on first start
 
 ## How this fits into a local-tool workflow
 

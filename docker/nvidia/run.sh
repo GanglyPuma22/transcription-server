@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Experimental NVIDIA GPU-capable run script derived from hwdsl2/docker-whisper.
+# Optional NVIDIA GPU-capable run script derived from hwdsl2/docker-whisper.
 # Keeps the same basic server behavior, but allows WHISPER_DEVICE=cuda when this
 # image is used on a host with Docker GPU support.
 
@@ -130,7 +130,7 @@ printf '%s' "$WHISPER_MODEL" > /var/lib/whisper/.model
 printf '%s' "$server_addr"   > /var/lib/whisper/.server_addr
 
 echo
-echo "Experimental Whisper GPU image"
+echo "Optional Whisper GPU image"
 echo "  Model:    $WHISPER_MODEL"
 echo "  Device:   $WHISPER_DEVICE ($WHISPER_COMPUTE_TYPE)"
 echo "  Language: $WHISPER_LANGUAGE"
@@ -138,7 +138,7 @@ echo "  Port:     $WHISPER_PORT"
 echo "  Beam:     $WHISPER_BEAM"
 if [ "$WHISPER_DEVICE" != "cuda" ]; then
   echo "WARNING: GPU mode is not active (WHISPER_DEVICE=$WHISPER_DEVICE)." >&2
-  echo "WARNING: Check whisper.env and use whisper.nvidia.env.example for the experimental GPU path." >&2
+  echo "WARNING: Check whisper.env and use whisper.nvidia.env.example for the optional GPU path." >&2
 fi
 echo
 

@@ -1,6 +1,6 @@
 services:
   whisper:
-    image: hwdsl2/whisper-server@sha256:94dc52fe65de35d20cf1e14be9805c471552e28aba1b71b582d7d685106850c4
+    image: hwdsl2/whisper-server
     restart: unless-stopped
     ports:
       - "${WHISPER_BIND_ADDR:-127.0.0.1}:${WHISPER_HOST_PORT:-9000}:9000/tcp"

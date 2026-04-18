@@ -14,7 +14,7 @@ One common use case: an OpenClaw agent receives a Telegram voice note, posts the
 
 This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: let people send voice notes to an agent without making the agent box miserable to use.
 
-![Architecture diagram showing a Telegram voice note flowing through an OpenClaw agent to a Raspberry Pi transcription box, then back as plain text so the workflow can continue.](./docs/architecture-diagram.png)
+![Architecture diagram showing a Telegram voice note flowing through an OpenClaw agent on the main workstation to a separate transcription worker, then through Whisper on a CPU or GPU node, before the agent continues the workflow.](./docs/architecture-diagram.png)
 
 ## At a glance
 

@@ -15,13 +15,17 @@ set -euo pipefail
 #
 # Resolution order:
 # 1. Use STT_PI_URL / STT_PI_API_KEY when explicitly provided.
-# 2. Otherwise, if this repo has a local whisper.env, use the local deployment.
-# 3. Otherwise, fall back to SSH-based discovery for the remote video-server path.
+# 2. If STT_PI_USE_LOCAL is enabled, force this repo's local whisper.env.
+# 3. If STT_PI_PREFER_REMOTE is enabled, force SSH-based remote discovery.
+# 4. Otherwise, prefer this repo's local whisper.env when present.
+# 5. Fall back to SSH-based discovery for the remote video-server path.
 #
 # Env vars:
 #   STT_PI_SSH_ALIAS       SSH host alias to inspect for auto-discovery (default: video-server)
 #   STT_PI_URL             Override full base URL, e.g. http://10.0.0.45:9000
 #   STT_PI_API_KEY         Override bearer token instead of fetching from the Pi over SSH
+#   STT_PI_USE_LOCAL       1/true/yes to force local repo whisper.env + local server resolution
+#   STT_PI_PREFER_REMOTE   1/true/yes to force SSH-based remote discovery even if local repo config exists
 #   STT_PI_LANGUAGE        Default: en
 #   STT_PI_MODEL           Default: whisper-1
 #   STT_PI_TIMEOUT         Exact curl timeout seconds override
@@ -54,6 +58,23 @@ TIMEOUT_PAD="${STT_PI_TIMEOUT_PAD:-420}"
 TIMEOUT_MIN="${STT_PI_TIMEOUT_MIN:-1200}"
 DEBUG="${STT_PI_DEBUG:-0}"
 READY_WAIT="${STT_PI_READY_WAIT:-120}"
+USE_LOCAL_RAW="${STT_PI_USE_LOCAL:-}"
+PREFER_REMOTE_RAW="${STT_PI_PREFER_REMOTE:-}"
+
+is_truthy() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+use_local_runtime_config() {
+  is_truthy "$USE_LOCAL_RAW"
+}
+
+prefer_remote_runtime() {
+  is_truthy "$PREFER_REMOTE_RAW"
+}
 
 require_binary() {
   local name="$1"
@@ -70,7 +91,10 @@ check_dependencies() {
   require_binary python3
 
   if [[ -z "${STT_PI_URL:-}" || -z "${STT_PI_API_KEY:-}" ]]; then
-    if ! has_local_runtime_config; then
+    if ! use_local_runtime_config && ! has_local_runtime_config; then
+      require_binary ssh
+    fi
+    if prefer_remote_runtime; then
       require_binary ssh
     fi
   fi
@@ -108,7 +132,16 @@ resolve_url() {
     return
   fi
 
-  if has_local_runtime_config; then
+  if use_local_runtime_config; then
+    if ! has_local_runtime_config; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but local whisper.env is missing: $LOCAL_WHISPER_ENV" >&2
+      exit 3
+    fi
+    local_base_url
+    return
+  fi
+
+  if ! prefer_remote_runtime && has_local_runtime_config; then
     local_base_url
     return
   fi
@@ -132,7 +165,21 @@ resolve_key() {
   fi
 
   local key
-  if has_local_runtime_config; then
+  if use_local_runtime_config; then
+    if ! has_local_runtime_config; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but local whisper.env is missing: $LOCAL_WHISPER_ENV" >&2
+      exit 4
+    fi
+    key="$(read_env_value "$LOCAL_WHISPER_ENV" WHISPER_API_KEY)"
+    if [[ -z "$key" ]]; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but WHISPER_API_KEY is missing in $LOCAL_WHISPER_ENV (set STT_PI_API_KEY or update the file)" >&2
+      exit 4
+    fi
+    printf '%s\n' "$key"
+    return
+  fi
+
+  if ! prefer_remote_runtime && has_local_runtime_config; then
     key="$(read_env_value "$LOCAL_WHISPER_ENV" WHISPER_API_KEY)"
     if [[ -z "$key" ]]; then
       echo "ERROR: local whisper.env exists but WHISPER_API_KEY is missing (set STT_PI_API_KEY or update $LOCAL_WHISPER_ENV)" >&2

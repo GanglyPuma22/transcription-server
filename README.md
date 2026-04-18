@@ -84,7 +84,9 @@ docker compose up -d
 This is the intended default way to use the server from a local script or agent client.
 It posts the audio file to the server, auto-derives a sensible timeout from the file duration, and still lets you override the timeout explicitly if you need to.
 
-By default the helper prefers explicit `STT_PI_URL` / `STT_PI_API_KEY` overrides first, then the local repo's `whisper.env` when present, and only falls back to SSH-based `video-server` discovery if no local runtime config exists.
+By default the helper prefers explicit `STT_PI_URL` / `STT_PI_API_KEY` overrides first, then the local repo's `whisper.env` when present, and only falls back to SSH-based remote discovery if no local runtime config exists.
+
+If you are calling this helper from a broader workspace that has a canonical remote STT box, set `STT_PI_PREFER_REMOTE=1` there instead of relying on local repo config to win by accident.
 
 When it resolves to a local URL such as `127.0.0.1:9000`, it also waits for `/health` before uploading the audio so startup/model-load races are less annoying.
 

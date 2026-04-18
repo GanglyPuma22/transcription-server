@@ -240,6 +240,12 @@ wait_for_local_server() {
   local base_url="$1"
   local deadline health_url
   health_url="$base_url/health"
+
+  if [[ ! "$READY_WAIT" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: STT_PI_READY_WAIT must be a non-negative integer, got: $READY_WAIT" >&2
+    exit 11
+  fi
+
   deadline=$((SECONDS + READY_WAIT))
 
   while (( SECONDS < deadline )); do

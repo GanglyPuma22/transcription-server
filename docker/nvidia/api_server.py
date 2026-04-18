@@ -51,6 +51,11 @@ _beam_size = 5      # beam size used for transcription
 _inference_lock = threading.Lock()
 
 
+def _env_truthy(name: str, default: str = "") -> bool:
+    value = os.environ.get(name, default).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _load_model() -> None:
     """Import and initialise the faster-whisper model from environment config."""
     global _model, _model_name, _beam_size
@@ -62,7 +67,7 @@ def _load_model() -> None:
     compute_type     = os.environ.get("WHISPER_COMPUTE_TYPE", "int8").strip()
     threads          = int(os.environ.get("WHISPER_THREADS",  "2"))
     cache_dir        = os.environ.get("HF_HOME", "/var/lib/whisper")
-    local_files_only = bool(os.environ.get("WHISPER_LOCAL_ONLY", "").strip())
+    local_files_only = _env_truthy("WHISPER_LOCAL_ONLY")
     _beam_size       = int(os.environ.get("WHISPER_BEAM", "5"))
 
     logger.info(
@@ -134,10 +139,11 @@ def _verify_api_key(authorization: Optional[str] = Header(default=None)) -> None
 
 def _fmt_ts(seconds: float, fmt: str) -> str:
     """Format a float second offset as an SRT or VTT timestamp string."""
-    h  = int(seconds // 3600)
-    m  = int((seconds % 3600) // 60)
-    s  = int(seconds % 60)
-    ms = int(round((seconds - int(seconds)) * 1000))
+    total_ms = int(round(seconds * 1000))
+    h = total_ms // 3_600_000
+    m = (total_ms % 3_600_000) // 60_000
+    s = (total_ms % 60_000) // 1_000
+    ms = total_ms % 1_000
     sep = "," if fmt == "srt" else "."
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
@@ -344,11 +350,16 @@ async def transcribe(
     original_name = file.filename or "audio"
     suffix = os.path.splitext(original_name)[1] or ".audio"
     tmp_path: Optional[str] = None
+    upload_size = 0
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp_path = tmp.name
-            content = await file.read()
-            tmp.write(content)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                upload_size += len(chunk)
+                tmp.write(chunk)
     except Exception as exc:
         if tmp_path:
             try:
@@ -360,7 +371,7 @@ async def transcribe(
 
     logger.info(
         "Transcribing '%s' (%d bytes) | lang=%s format=%s stream=%s",
-        original_name, len(content), lang or "auto", response_format, stream_flag,
+        original_name, upload_size, lang or "auto", response_format, stream_flag,
     )
 
     # ------------------------------------------------------------------

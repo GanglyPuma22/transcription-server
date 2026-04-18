@@ -13,15 +13,25 @@ set -euo pipefail
 # - otherwise timeout = ceil(audio_duration_seconds) + STT_PI_TIMEOUT_PAD
 # - and the result is clamped to at least STT_PI_TIMEOUT_MIN
 #
+# Resolution order:
+# 1. Use STT_PI_URL / STT_PI_API_KEY when explicitly provided.
+# 2. If STT_PI_USE_LOCAL is enabled, force this repo's local whisper.env.
+# 3. If STT_PI_PREFER_REMOTE is enabled, force SSH-based remote discovery.
+# 4. Otherwise, prefer this repo's local whisper.env when present.
+# 5. Fall back to SSH-based discovery for the remote video-server path.
+#
 # Env vars:
 #   STT_PI_SSH_ALIAS       SSH host alias to inspect for auto-discovery (default: video-server)
 #   STT_PI_URL             Override full base URL, e.g. http://10.0.0.45:9000
 #   STT_PI_API_KEY         Override bearer token instead of fetching from the Pi over SSH
+#   STT_PI_USE_LOCAL       1/true/yes to force local repo whisper.env + local server resolution
+#   STT_PI_PREFER_REMOTE   1/true/yes to force SSH-based remote discovery even if local repo config exists
 #   STT_PI_LANGUAGE        Default: en
 #   STT_PI_MODEL           Default: whisper-1
 #   STT_PI_TIMEOUT         Exact curl timeout seconds override
 #   STT_PI_TIMEOUT_PAD     Added padding above audio duration when timeout is auto-derived (default: 420)
 #   STT_PI_TIMEOUT_MIN     Minimum timeout for auto-derived mode (default: 1200)
+#   STT_PI_READY_WAIT      Seconds to wait for /health before uploading when using a local URL (default: 120)
 #   STT_PI_DEBUG           1 to print endpoint / temp path / duration / timeout / timing to stderr
 
 if [[ $# -ne 1 ]]; then
@@ -35,6 +45,11 @@ if [[ ! -f "$AUDIO_FILE" ]]; then
   exit 2
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_COMPOSE_ENV="$APP_DIR/.env"
+LOCAL_WHISPER_ENV="$APP_DIR/whisper.env"
+
 SSH_ALIAS="${STT_PI_SSH_ALIAS:-video-server}"
 LANGUAGE="${STT_PI_LANGUAGE:-en}"
 MODEL="${STT_PI_MODEL:-whisper-1}"
@@ -42,6 +57,24 @@ TIMEOUT_OVERRIDE="${STT_PI_TIMEOUT:-}"
 TIMEOUT_PAD="${STT_PI_TIMEOUT_PAD:-420}"
 TIMEOUT_MIN="${STT_PI_TIMEOUT_MIN:-1200}"
 DEBUG="${STT_PI_DEBUG:-0}"
+READY_WAIT="${STT_PI_READY_WAIT:-120}"
+USE_LOCAL_RAW="${STT_PI_USE_LOCAL:-}"
+PREFER_REMOTE_RAW="${STT_PI_PREFER_REMOTE:-}"
+
+is_truthy() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+use_local_runtime_config() {
+  is_truthy "$USE_LOCAL_RAW"
+}
+
+prefer_remote_runtime() {
+  is_truthy "$PREFER_REMOTE_RAW"
+}
 
 require_binary() {
   local name="$1"
@@ -58,13 +91,58 @@ check_dependencies() {
   require_binary python3
 
   if [[ -z "${STT_PI_URL:-}" || -z "${STT_PI_API_KEY:-}" ]]; then
-    require_binary ssh
+    if ! use_local_runtime_config && ! has_local_runtime_config; then
+      require_binary ssh
+    fi
+    if prefer_remote_runtime; then
+      require_binary ssh
+    fi
   fi
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -n 1
+}
+
+has_local_runtime_config() {
+  [[ -f "$LOCAL_WHISPER_ENV" ]]
+}
+
+local_base_url() {
+  local bind_addr host_port client_host
+  bind_addr="$(read_env_value "$LOCAL_COMPOSE_ENV" WHISPER_BIND_ADDR)"
+  host_port="$(read_env_value "$LOCAL_COMPOSE_ENV" WHISPER_HOST_PORT)"
+
+  [[ -z "$bind_addr" ]] && bind_addr="127.0.0.1"
+  [[ -z "$host_port" ]] && host_port="9000"
+
+  case "$bind_addr" in
+    0.0.0.0|::|"") client_host="127.0.0.1" ;;
+    *) client_host="$bind_addr" ;;
+  esac
+
+  printf 'http://%s:%s\n' "$client_host" "$host_port"
 }
 
 resolve_url() {
   if [[ -n "${STT_PI_URL:-}" ]]; then
     printf '%s\n' "$STT_PI_URL"
+    return
+  fi
+
+  if use_local_runtime_config; then
+    if ! has_local_runtime_config; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but local whisper.env is missing: $LOCAL_WHISPER_ENV" >&2
+      exit 3
+    fi
+    local_base_url
+    return
+  fi
+
+  if ! prefer_remote_runtime && has_local_runtime_config; then
+    local_base_url
     return
   fi
 
@@ -87,6 +165,30 @@ resolve_key() {
   fi
 
   local key
+  if use_local_runtime_config; then
+    if ! has_local_runtime_config; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but local whisper.env is missing: $LOCAL_WHISPER_ENV" >&2
+      exit 4
+    fi
+    key="$(read_env_value "$LOCAL_WHISPER_ENV" WHISPER_API_KEY)"
+    if [[ -z "$key" ]]; then
+      echo "ERROR: STT_PI_USE_LOCAL is enabled but WHISPER_API_KEY is missing in $LOCAL_WHISPER_ENV (set STT_PI_API_KEY or update the file)" >&2
+      exit 4
+    fi
+    printf '%s\n' "$key"
+    return
+  fi
+
+  if ! prefer_remote_runtime && has_local_runtime_config; then
+    key="$(read_env_value "$LOCAL_WHISPER_ENV" WHISPER_API_KEY)"
+    if [[ -z "$key" ]]; then
+      echo "ERROR: local whisper.env exists but WHISPER_API_KEY is missing (set STT_PI_API_KEY or update $LOCAL_WHISPER_ENV)" >&2
+      exit 4
+    fi
+    printf '%s\n' "$key"
+    return
+  fi
+
   if ! key="$(ssh -o BatchMode=yes "$SSH_ALIAS" "sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/transcription-server/whisper.env 2>/dev/null || sed -n 's/^WHISPER_API_KEY=//p' /home/mmounier/services/whisper/whisper.env 2>/dev/null")"; then
     echo "ERROR: failed to fetch STT Pi API key over SSH (set STT_PI_API_KEY or fix SSH access to $SSH_ALIAS)" >&2
     exit 4
@@ -127,9 +229,42 @@ print(max(minimum, duration + pad))
 PY
 }
 
+is_local_base_url() {
+  case "$1" in
+    http://127.0.0.1:*|http://localhost:*|http://[::1]:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wait_for_local_server() {
+  local base_url="$1"
+  local deadline health_url
+  health_url="$base_url/health"
+
+  if [[ ! "$READY_WAIT" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: STT_PI_READY_WAIT must be a non-negative integer, got: $READY_WAIT" >&2
+    exit 11
+  fi
+
+  deadline=$((SECONDS + READY_WAIT))
+
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 2 "$health_url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: local transcription server did not become ready at $health_url within ${READY_WAIT}s" >&2
+  exit 11
+}
+
 check_dependencies
 
 BASE_URL="$(resolve_url)"
+if is_local_base_url "$BASE_URL"; then
+  wait_for_local_server "$BASE_URL"
+fi
 API_KEY="$(resolve_key)"
 TIMEOUT="$(compute_timeout)"
 AUDIO_DURATION_RAW="$(audio_duration_seconds)"

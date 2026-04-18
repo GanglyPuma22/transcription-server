@@ -1,22 +1,46 @@
 # transcription-server
 
-A small self-hosted transcription box for local tools.
+A self-hosted transcription server for voice notes, local tools, and agents.
 
-I built this because I wanted an OpenClaw agent to hand a voice note to a Raspberry Pi, get text back, and keep going. Running Whisper on the same machine as OpenClaw turned out to be a bad fit: transcription was CPU-heavy enough that one audio job could make every active session crawl. This repo packages the deployment and day-2-day operations so local transcription can live on its own box and stay boring in the best way.
+I built this for one very practical workflow: sending voice notes to your agent. That is a great input method right up until Whisper runs on the same machine as the agent stack and makes everything else crawl.
 
-One common use case: an OpenClaw agent receives a Telegram voice note, posts the audio to a local Pi, gets back a transcript, and continues the workflow without touching a hosted STT API.
+So the real job of this repo is simple: move transcription onto a separate box, get text back fast enough to stay useful, and let the main machine keep behaving normally. A Raspberry Pi handled the cheap always-on path first, and later testing on an NVIDIA-equipped machine showed the same overall setup could also be absurdly fast when GPU is available.
+
+This repo packages the deployment and day-2-day operations so voice-note transcription can live on its own box and stay boring in the best way: CPU-friendly by default, with an optional NVIDIA GPU path when speed matters.
+
+One common use case: an OpenClaw agent receives a Telegram voice note, posts the audio to a local transcription box (Pi, Linux host, or GPU workstation), gets back a transcript, and continues the workflow without touching a hosted STT API.
 
 ## Architecture
 
-This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: keep transcription off the main box so the agent can keep moving.
+This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: let people send voice notes to an agent without making the agent box miserable to use.
 
 ![Architecture diagram showing a Telegram voice note flowing through an OpenClaw agent to a Raspberry Pi transcription box, then back as plain text so the workflow can continue.](./docs/architecture-diagram.png)
 
 ## At a glance
 
 - This is a thin deployment wrapper around [`hwdsl2/docker-whisper`](https://github.com/hwdsl2/docker-whisper).
-- It is good for local agents, local scripts, and private speech-to-text on a Pi or small Linux box.
+- It is especially good for voice-note-to-agent workflows, plus local scripts and other private STT handoffs.
+- The default tracked path stays CPU-first and safe for the current Pi deployment.
+- The repo also includes an optional NVIDIA GPU path for much faster local transcription when the hardware is there.
 - It is not a new ASR engine, not a hosted SaaS, and not a hardened public-Internet deployment.
+
+## Deployment modes
+
+### CPU mode (default)
+
+Use the normal tracked config when you want the safest, simplest path:
+
+- Raspberry Pi or other small Linux host
+- local/private STT for agents and scripts
+- predictable deployment with minimal moving parts
+
+### NVIDIA GPU mode (optional)
+
+Use the GPU override when you want the same local/STT shape but much higher throughput:
+
+- workstation or laptop with NVIDIA GPU support in Docker
+- much faster turnaround on long files
+- future voice/agent workflows where transcription latency matters more
 
 ## Quick start
 
@@ -62,6 +86,12 @@ docker compose up -d
 This is the intended default way to use the server from a local script or agent client.
 It posts the audio file to the server, auto-derives a sensible timeout from the file duration, and still lets you override the timeout explicitly if you need to.
 
+By default the helper prefers explicit `STT_PI_URL` / `STT_PI_API_KEY` overrides first, then the local repo's `whisper.env` when present, and only falls back to SSH-based remote discovery if no local runtime config exists.
+
+If you are calling this helper from a broader workspace that has a canonical remote STT box, set `STT_PI_PREFER_REMOTE=1` there instead of relying on local repo config to win by accident.
+
+When it resolves to a local URL such as `127.0.0.1:9000`, it also waits for `/health` before uploading the audio so startup/model-load races are less annoying.
+
 ### 5) Or call the HTTP API directly
 
 ```bash
@@ -78,13 +108,16 @@ If the service is bound to `0.0.0.0`, replace `127.0.0.1` with your host's LAN I
 
 ## Why this exists
 
-The upstream project gives you the server. What I wanted was the rest of the operational story:
+The upstream project gives you the server. What I wanted was the rest of the operational story around a very specific workflow: sending voice notes to an agent.
+
+That meant:
 
 - a tiny repo I could inspect in a minute
-- one obvious deploy path for a Raspberry Pi
+- one obvious deploy path for a Raspberry Pi or small Linux box
+- an optional faster path for an NVIDIA-equipped machine
 - local overrides kept out of git
 - predictable restart, logs, and status commands
-- a clean way for an OpenClaw agent or any local script to use self-hosted transcription
+- a clean way for an OpenClaw agent or any local script to turn audio into text without stealing the main machine
 
 That is what this repo is for. Not more than that.
 
@@ -92,7 +125,7 @@ That is what this repo is for. Not more than that.
 
 This repo makes sense if you want:
 
-- self-hosted speech-to-text on a Pi or small Linux box
+- self-hosted speech-to-text on a Pi, small Linux box, or NVIDIA-equipped workstation
 - a local endpoint for agents, bots, or scripts
 - private transcription without wiring in a hosted API
 - a deployment wrapper you can fork and modify quickly
@@ -141,6 +174,77 @@ What the deploy script does:
 4. pulls the pinned image
 5. restarts the service with Docker Compose
 
+## Optional NVIDIA GPU path
+
+The current upstream `hwdsl2/whisper-server` image is CPU-only at startup time: its `run.sh` validates `WHISPER_DEVICE=cpu` and rejects `cuda`.
+
+Because of that, this repo cannot add real GPU support by flipping one env var on the existing image. The GPU path here uses a separate CUDA-based local build instead, while leaving the default CPU deployment untouched.
+
+Good fit for the GPU path:
+
+- a laptop or workstation with an NVIDIA GPU
+- much faster local transcription for long files or voice-heavy workflows
+- using this repo as the shared local STT layer across both low-power and high-throughput machines
+
+### 1) Check host GPU support
+
+```bash
+./scripts/check-nvidia-support.sh
+```
+
+This checks `nvidia-smi`, Docker reachability, and whether Docker can see the GPU through a tiny CUDA container.
+
+### 2) Prepare the GPU runtime env
+
+```bash
+cp whisper.nvidia.env.example whisper.env
+cp .env.example .env
+```
+
+### 3) Build and run the NVIDIA variant
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d --build
+```
+
+### 4) Verify the GPU path actually came up
+
+```bash
+curl -fsS http://127.0.0.1:9000/health
+```
+
+If you want one higher-confidence check, inspect what the running container sees:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec whisper sh -lc 'echo "--- /whisper.env ---"; cat /whisper.env; echo; echo "--- WHISPER_* ---"; env | grep "^WHISPER_" | sort; echo; echo "--- /dev/nvidia* ---"; ls -l /dev/nvidia*'
+```
+
+Notes:
+
+- `docker-compose.yml` still carries the normal ports, volume, and `whisper.env` mount.
+- `docker-compose.nvidia.yml` overrides the service to build a local CUDA-capable image, request `gpus: all`, and auto-manage the model-cache volume for local testing.
+- `whisper.nvidia.env.example` sets `WHISPER_DEVICE=cuda` and `WHISPER_COMPUTE_TYPE=float16` as the first-pass defaults.
+- For tighter VRAM, try `WHISPER_COMPUTE_TYPE=int8_float16`.
+- In one real local comparison, roughly 13 minutes of audio took about 15 minutes on CPU and about 20 seconds on GPU. Treat that as a workflow datapoint, not a formal benchmark.
+
+The GPU path is newer than the default CPU path, so it should be treated as an optional fast path rather than the only supported deployment mode.
+
+### Common GPU gotchas
+
+If the container starts but the logs still show CPU defaults such as `base`, `cpu`, `auto`, or `threads=2`, check these first:
+
+- did you copy `whisper.nvidia.env.example` to `whisper.env` before startup?
+- does `docker compose ... exec whisper cat /whisper.env` show `WHISPER_DEVICE=cuda`?
+- does `docker compose ... exec whisper ls -l /dev/nvidia*` show GPU devices inside the container?
+- does `./scripts/check-nvidia-support.sh` pass on the host?
+- did you recreate the service after changing env files?
+
+If the server is running but the client helper still cannot connect locally, check:
+
+- `curl -fsS http://127.0.0.1:9000/health`
+- whether `.env` still binds to `127.0.0.1`
+- whether the model is still downloading/loading on first start
+
 ## How this fits into a local-tool workflow
 
 The motivating workflow for me looked like this:
@@ -183,7 +287,7 @@ Local prerequisites for the client helper:
 - `ffmpeg`
 - `ffprobe`
 - `python3`
-- `ssh` when using auto-discovery or remote API-key lookup
+- `ssh` only when using auto-discovery or remote API-key lookup
 
 Useful overrides:
 
@@ -197,10 +301,13 @@ STT_PI_DEBUG=1 ./scripts/transcribe-file.sh /path/to/audio.ogg
 ## Files
 
 - `docker-compose.yml` — pinned deployment config with safe tracked defaults
+- `docker-compose.nvidia.yml` — optional NVIDIA GPU override for local CUDA-capable hosts
 - `.env.example` — optional host-specific Docker Compose overrides
-- `whisper.env.example` — runtime env template for the upstream container
+- `whisper.env.example` — runtime env template for the default CPU/upstream container
+- `whisper.nvidia.env.example` — runtime env template for the optional NVIDIA GPU variant
 - `scripts/transcribe-file.sh` — canonical local client entrypoint for posting audio to the server
 - `scripts/transcribe-file-via-server.sh` — duration-aware implementation used by the default client helper
+- `scripts/check-nvidia-support.sh` — quick host-side check for the optional NVIDIA GPU path
 - `scripts/sync-to-pi.sh` — rsync the repo to a remote host
 - `scripts/deploy-to-pi.sh` — sync, preserve env, create volume, and deploy
 - `scripts/restart-on-pi.sh` — restart the service remotely
@@ -222,6 +329,8 @@ A few blunt notes, because this is where people get sloppy:
 You probably should, if all you need is the server.
 
 This repo exists for the case where you want the smallest possible deployment wrapper around that upstream work, plus a few operational conveniences that make it pleasant to use from local automation.
+
+In this branch, that also includes an experimental GPU-oriented variant for hosts where fast local transcription matters more than strict parity with the Pi deployment.
 
 ## License
 

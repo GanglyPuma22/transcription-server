@@ -1,23 +1,25 @@
 # transcription-server
 
-A self-hosted transcription server for local tools and agents.
+A self-hosted transcription server for voice notes, local tools, and agents.
 
-I built this because I wanted an OpenClaw agent to hand a voice note to a separate box, get text back, and keep going. Running Whisper on the same machine as OpenClaw turned out to be a bad fit: transcription was CPU-heavy enough that one audio job could make every active session crawl. A Raspberry Pi fixed that cheaply, and later testing on an NVIDIA-equipped machine showed the same overall setup could also be absurdly fast when GPU is available.
+I built this for one very practical workflow: sending voice notes to your agent. That is a great input method right up until Whisper runs on the same machine as the agent stack and makes everything else crawl.
 
-This repo packages the deployment and day-2-day operations so local transcription can live on its own box and stay boring in the best way: CPU-friendly by default, with an optional NVIDIA GPU path when speed matters.
+So the real job of this repo is simple: move transcription onto a separate box, get text back fast enough to stay useful, and let the main machine keep behaving normally. A Raspberry Pi handled the cheap always-on path first, and later testing on an NVIDIA-equipped machine showed the same overall setup could also be absurdly fast when GPU is available.
+
+This repo packages the deployment and day-2-day operations so voice-note transcription can live on its own box and stay boring in the best way: CPU-friendly by default, with an optional NVIDIA GPU path when speed matters.
 
 One common use case: an OpenClaw agent receives a Telegram voice note, posts the audio to a local transcription box (Pi, Linux host, or GPU workstation), gets back a transcript, and continues the workflow without touching a hosted STT API.
 
 ## Architecture
 
-This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: keep transcription off the main box so the agent can keep moving.
+This repo is mostly about the local handoff. The HTTP endpoint matters because it makes the integration easy, but the real win is simpler than that: let people send voice notes to an agent without making the agent box miserable to use.
 
 ![Architecture diagram showing a Telegram voice note flowing through an OpenClaw agent to a Raspberry Pi transcription box, then back as plain text so the workflow can continue.](./docs/architecture-diagram.png)
 
 ## At a glance
 
 - This is a thin deployment wrapper around [`hwdsl2/docker-whisper`](https://github.com/hwdsl2/docker-whisper).
-- It is good for local agents, local scripts, and private speech-to-text on either a small CPU box or an NVIDIA-equipped workstation.
+- It is especially good for voice-note-to-agent workflows, plus local scripts and other private STT handoffs.
 - The default tracked path stays CPU-first and safe for the current Pi deployment.
 - The repo also includes an optional NVIDIA GPU path for much faster local transcription when the hardware is there.
 - It is not a new ASR engine, not a hosted SaaS, and not a hardened public-Internet deployment.
@@ -106,14 +108,16 @@ If the service is bound to `0.0.0.0`, replace `127.0.0.1` with your host's LAN I
 
 ## Why this exists
 
-The upstream project gives you the server. What I wanted was the rest of the operational story:
+The upstream project gives you the server. What I wanted was the rest of the operational story around a very specific workflow: sending voice notes to an agent.
+
+That meant:
 
 - a tiny repo I could inspect in a minute
 - one obvious deploy path for a Raspberry Pi or small Linux box
 - an optional faster path for an NVIDIA-equipped machine
 - local overrides kept out of git
 - predictable restart, logs, and status commands
-- a clean way for an OpenClaw agent or any local script to use self-hosted transcription
+- a clean way for an OpenClaw agent or any local script to turn audio into text without stealing the main machine
 
 That is what this repo is for. Not more than that.
 
